@@ -1,20 +1,20 @@
 .DEFAULT_GOAL := help
 SHELL=/bin/bash
 COMPOSER_ROOT=composer
+PLUGIN_NAME=payplug/sylius-payplug-plugin
+SYLIUS_VERSION=1.11.0
+SYMFONY_VERSION=5.4
+PHP_VERSION=8.0
 TEST_DIRECTORY=tests/Application
+YARN=cd tests/Application && yarn
 CONSOLE=cd tests/Application && php bin/console -e test
 COMPOSER=cd tests/Application && composer
-YARN=cd tests/Application && yarn
-
-SYLIUS_VERSION=1.9.0
-SYMFONY_VERSION=4.4
-PLUGIN_NAME=payplug/sylius-payplug-plugin
 
 ###
 ### DEVELOPMENT
 ### ¯¯¯¯¯¯¯¯¯¯¯
 
-install: sylius ## Install Plugin on Sylius [SyliusVersion=1.9] [SymfonyVersion=5.2]
+install: sylius ## Install Plugin on Sylius [SyliusVersion=1.11] [SymfonyVersion=5.4] [PHP_VERSION=8.0]
 .PHONY: install
 
 reset: ## Remove dependencies
@@ -32,19 +32,22 @@ sylius: sylius-standard update-dependencies install-plugin install-sylius
 .PHONY: sylius
 
 sylius-standard:
-	${COMPOSER_ROOT} create-project sylius/sylius-standard ${TEST_DIRECTORY} "~${SYLIUS_VERSION}"
+	${COMPOSER_ROOT} create-project sylius/sylius-standard ${TEST_DIRECTORY} "~${SYLIUS_VERSION}" --no-install --no-scripts
+	${COMPOSER} config allow-plugins true
+	${COMPOSER} require sylius/sylius:"~${SYLIUS_VERSION}"
 
 update-dependencies:
 	${COMPOSER} config extra.symfony.require "^${SYMFONY_VERSION}"
 	${COMPOSER} require --dev donatj/mock-webserver:^2.1 --no-scripts --no-update
 # FIX since https://github.com/Sylius/Sylius/pull/13215 is not merged
 	${COMPOSER} require doctrine/dbal:"^2.6" doctrine/orm:"^2.9" --no-scripts --no-update
-ifeq ($(SYMFONY_VERSION), 4.4)
-	${COMPOSER} require sylius/admin-api-bundle --no-scripts --no-update
+ifeq ($(shell [[ $(SYMFONY_VERSION) == 4.4 && $(PHP_VERSION) == 7.4 ]] && echo true ),true)
+	${COMPOSER} require sylius/admin-api-bundle:1.10 --no-scripts --no-update
 endif
 ifeq ($(SYLIUS_VERSION), 1.8.0)
 	${COMPOSER} update --no-progress --no-scripts --prefer-dist -n
 endif
+	${COMPOSER} require symfony/asset:^${SYMFONY_VERSION} --no-scripts --no-update
 	${COMPOSER} update --no-progress -n
 
 install-plugin:
@@ -59,18 +62,27 @@ install-plugin:
 	sed -i "4a \ \ \ \ form_themes: ['form/form_gateway_config_row.html.twig']" ${TEST_DIRECTORY}/config/packages/twig.yaml
 	mkdir -p ${TEST_DIRECTORY}/templates/form/
 	cp -R src/Resources/views/form/* ${TEST_DIRECTORY}/templates/form/
+
+# As of sylius/refund-plugin 1.2 the folder does not exist anymore
+ifneq ($(PHP_VERSION), 8)
 	mkdir -p ${TEST_DIRECTORY}/templates/bundles/SyliusAdminBundle/
 	cp -R src/Resources/views/SyliusAdminBundle/* ${TEST_DIRECTORY}/templates/bundles/SyliusAdminBundle/
-
 	# For Refund Plugin
 	cp -R ${TEST_DIRECTORY}/vendor/sylius/refund-plugin/src/Resources/views/SyliusAdminBundle/* ${TEST_DIRECTORY}/templates/bundles/SyliusAdminBundle/
+endif
 
 install-sylius:
 	${CONSOLE} sylius:install -n -s default
 	${YARN} install
 	${YARN} build
+ifeq ($(shell expr $(value) \<= 5.3), 1)
 	${CONSOLE} translation:update en PayPlugSyliusPayPlugPlugin --dump-messages
 	${CONSOLE} translation:update fr PayPlugSyliusPayPlugPlugin --dump-messages
+else ifeq ($(shell expr $(value) \>= 5.4), 1)
+	${CONSOLE} translation:extract en PayPlugSyliusPayPlugPlugin --dump-messages
+	${CONSOLE} translation:extract fr PayPlugSyliusPayPlugPlugin --dump-messages
+endif
+
 	${CONSOLE} cache:clear
 
 phpunit-configure:
@@ -84,11 +96,11 @@ behat-configure: ## Configure Behat
 	(cd ${TEST_DIRECTORY} && cp behat.yml.dist behat.yml)
 	(cd ${TEST_DIRECTORY} && sed -i "s#vendor/sylius/sylius/src/Sylius/Behat/Resources/config/suites.yml#vendor/${PLUGIN_NAME}/tests/Behat/Resources/suites.yml#g" behat.yml)
 	(cd ${TEST_DIRECTORY} && sed -i "s#vendor/sylius/sylius/features#vendor/${PLUGIN_NAME}/features#g" behat.yml)
-	(cd ${TEST_DIRECTORY} && echo '    - { resource: "../vendor/${PLUGIN_NAME}/tests/Behat/Resources/services.xml" }' >> config/services_test.yaml)
-	(cd ${TEST_DIRECTORY} && echo '    - { resource: "../vendor/${PLUGIN_NAME}/src/Resources/config/services.xml" }' >> config/services_test.yaml)
-	(cd ${TEST_DIRECTORY} && echo '    - { resource: "../vendor/sylius/refund-plugin/src/Resources/config/services.xml" }' >> config/services_test.yaml)
-	(cd ${TEST_DIRECTORY} && echo '    - { resource: "../vendor/sylius/refund-plugin/tests/Behat/Resources/services.xml" }' >> config/services_test.yaml)
-	(cd ${TEST_DIRECTORY} && echo '    - { resource: "services_payplug.yaml" }' >> config/services_test.yaml)
+	(cd ${TEST_DIRECTORY} && sed -i '2i \ \ \ \ - { resource: "../vendor/${PLUGIN_NAME}/tests/Behat/Resources/services.xml\" }' config/services_test.yaml)
+	(cd ${TEST_DIRECTORY} && sed -i '3i \ \ \ \ - { resource: "../vendor/${PLUGIN_NAME}/src/Resources/config/services.xml" }' config/services_test.yaml)
+	(cd ${TEST_DIRECTORY} && sed -i '4i \ \ \ \ - { resource: "../vendor/sylius/refund-plugin/src/Resources/config/services.xml" }' config/services_test.yaml)
+	(cd ${TEST_DIRECTORY} && sed -i '5i \ \ \ \ - { resource: "../vendor/sylius/refund-plugin/tests/Behat/Resources/services.xml" }' config/services_test.yaml)
+	(cd ${TEST_DIRECTORY} && sed -i '6i \ \ \ \ - { resource: "services_payplug.yaml" }' config/services_test.yaml)
 
 grumphp:
 	vendor/bin/grumphp run

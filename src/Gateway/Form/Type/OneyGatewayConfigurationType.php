@@ -8,6 +8,7 @@ use PayPlug\SyliusPayPlugPlugin\Gateway\OneyGatewayFactory;
 use PayPlug\SyliusPayPlugPlugin\Gateway\Validator\Constraints\IsOneyEnabled;
 use PayPlug\SyliusPayPlugPlugin\Gateway\Validator\Constraints\IsPayPlugSecretKeyValid;
 use Sylius\Component\Core\Model\ChannelInterface;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Extension\Core\Type\TextType;
 use Symfony\Component\Form\FormBuilderInterface;
 use Symfony\Component\Form\FormError;
@@ -35,8 +36,20 @@ final class OneyGatewayConfigurationType extends AbstractGatewayConfigurationTyp
                     new IsPayPlugSecretKeyValid(),
                     new IsOneyEnabled(),
                 ],
-                'help' => $this->translator->trans('payplug_sylius_payplug_plugin.ui.retrieve_secret_key_in_api_configuration_portal'),
+                'help' => 'payplug_sylius_payplug_plugin.ui.retrieve_secret_key_in_api_configuration_portal',
                 'help_html' => true,
+            ])
+            ->add(OneyGatewayFactory::FEES_FOR, ChoiceType::class, [
+                'label' => 'payplug_sylius_payplug_plugin.ui.oney_gateway_config.fees_for.title',
+                'choices' => [
+                    'payplug_sylius_payplug_plugin.ui.oney_gateway_config.fees_for.client' => 'client',
+                    'payplug_sylius_payplug_plugin.ui.oney_gateway_config.fees_for.merchant' => 'merchant',
+                ],
+                'expanded' => true,
+                'validation_groups' => $validationGroups,
+                'constraints' => [
+                    new NotBlank([]),
+                ],
             ])
             ->addEventListener(FormEvents::PRE_SUBMIT, function (FormEvent $event): void {
                 $this->checkCreationRequirements(
@@ -51,11 +64,11 @@ final class OneyGatewayConfigurationType extends AbstractGatewayConfigurationTyp
                 /** @var ChannelInterface $dataFormChannel */
                 foreach ($dataFormChannels as $key => $dataFormChannel) {
                     $baseCurrency = $dataFormChannel->getBaseCurrency();
-                    if ($baseCurrency === null) {
+                    if (null === $baseCurrency) {
                         continue;
                     }
                     $baseCurrencyCode = $baseCurrency->getCode();
-                    if ($baseCurrencyCode !== OneyGatewayFactory::BASE_CURRENCY_CODE) {
+                    if (OneyGatewayFactory::BASE_CURRENCY_CODE !== $baseCurrencyCode) {
                         $message = $this->translator->trans(
                             'payplug_sylius_payplug_plugin.form.base_currency_not_euro',
                             [

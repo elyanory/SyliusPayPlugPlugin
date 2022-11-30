@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace PayPlug\SyliusPayPlugPlugin\Handler;
 
 use DateTimeImmutable;
+use Doctrine\ORM\EntityManagerInterface;
 use Payplug\Resource\IVerifiableAPIResource;
 use Payplug\Resource\Payment;
 use Payplug\Resource\PaymentAuthorization;
 use PayPlug\SyliusPayPlugPlugin\ApiClient\PayPlugApiClientInterface;
 use PayPlug\SyliusPayPlugPlugin\Entity\Card;
 use PayPlug\SyliusPayPlugPlugin\Gateway\OneyGatewayFactory;
-use Payum\Core\Request\Generic;
 use Psr\Log\LoggerInterface;
 use Sylius\Component\Core\Model\CustomerInterface;
 use Sylius\Component\Core\Model\PaymentInterface;
@@ -19,6 +19,7 @@ use Sylius\Component\Core\Repository\CustomerRepositoryInterface;
 use Sylius\Component\Resource\Factory\FactoryInterface;
 use Sylius\Component\Resource\Repository\RepositoryInterface;
 use Symfony\Component\HttpFoundation\Session\Flash\FlashBagInterface;
+use Symfony\Component\Lock\LockFactory;
 
 class PaymentNotificationHandler
 {
@@ -37,37 +38,54 @@ class PaymentNotificationHandler
     /** @var \Sylius\Component\Core\Repository\CustomerRepositoryInterface */
     private $customerRepository;
 
+    private EntityManagerInterface $entityManager;
+
+    private LockFactory $lockFactory;
+
     public function __construct(
         LoggerInterface $logger,
         RepositoryInterface $payplugCardRepository,
         FactoryInterface $payplugCardFactory,
         CustomerRepositoryInterface $customerRepository,
-        FlashBagInterface $flashBag
+        FlashBagInterface $flashBag,
+        EntityManagerInterface $entityManager,
+        LockFactory $lockFactory
     ) {
         $this->logger = $logger;
         $this->payplugCardRepository = $payplugCardRepository;
         $this->payplugCardFactory = $payplugCardFactory;
         $this->flashBag = $flashBag;
         $this->customerRepository = $customerRepository;
+        $this->entityManager = $entityManager;
+        $this->lockFactory = $lockFactory;
     }
 
-    public function treat(Generic $request, IVerifiableAPIResource $paymentResource, \ArrayObject $details): void
+    public function treat(PaymentInterface $payment, IVerifiableAPIResource $paymentResource, \ArrayObject $details): void
     {
         if (!$paymentResource instanceof Payment) {
             return;
         }
 
+        $lock = $this->lockFactory->createLock('payment_'.$paymentResource->id);
+        $lock->acquire(true);
+
+        $this->entityManager->refresh($payment);
+
         if ($paymentResource->is_paid) {
             $details['status'] = PayPlugApiClientInterface::STATUS_CAPTURED;
             $details['created_at'] = $paymentResource->created_at;
 
-            $this->saveCard($request->getFirstModel(), $paymentResource);
+            $this->saveCard($payment, $paymentResource);
+
+            $lock->release();
 
             return;
         }
 
         if ($this->isResourceIsAuthorized($paymentResource)) {
             $details['status'] = PayPlugApiClientInterface::STATUS_AUTHORIZED;
+
+            $lock->release();
 
             return;
         }
@@ -80,6 +98,8 @@ class PaymentNotificationHandler
                 'message' => $paymentResource->failure->message ?? '',
             ];
 
+            $lock->release();
+
             return;
         }
 
@@ -89,11 +109,12 @@ class PaymentNotificationHandler
             'message' => $paymentResource->failure->message ?? '',
         ];
 
-        if ($details['status'] === PayPlugApiClientInterface::INTERNAL_STATUS_ONE_CLICK) {
+        if (PayPlugApiClientInterface::INTERNAL_STATUS_ONE_CLICK === $details['status']) {
             $this->flashBag->add('error', 'payplug_sylius_payplug_plugin.error.transaction_failed_1click');
         }
 
         $details['status'] = PayPlugApiClientInterface::FAILED;
+        $lock->release();
     }
 
     private function saveCard(PaymentInterface $payment, IVerifiableAPIResource $paymentResource): void
@@ -125,7 +146,7 @@ class PaymentNotificationHandler
         }
 
         // Payment has been successfully made, but card was not saved
-        if ($paymentResource->__get('card')->id === null) {
+        if (null === $paymentResource->__get('card')->id) {
             $this->flashBag->add('info', 'payplug_sylius_payplug_plugin.warning.payment_success_no_card_saved');
 
             return;
@@ -168,15 +189,16 @@ class PaymentNotificationHandler
 
         // Oney is reviewing the payer’s file
         if ($paymentResource->__isset('payment_method') &&
-            $paymentResource->__get('payment_method') !== null &&
-            $paymentResource->__get('payment_method')['is_pending'] === true) {
+            null !== $paymentResource->__get('payment_method') &&
+            \array_key_exists('is_pending', $paymentResource->__get('payment_method')) &&
+            true === $paymentResource->__get('payment_method')['is_pending']) {
             return true;
         }
 
         $now = new DateTimeImmutable();
         if ($paymentResource->__isset('authorization') &&
             $paymentResource->__get('authorization') instanceof PaymentAuthorization &&
-            $paymentResource->__get('authorization')->__get('expires_at') !== null &&
+            null !== $paymentResource->__get('authorization')->__get('expires_at') &&
             $now < $now->setTimestamp($paymentResource->__get('authorization')->__get('expires_at'))) {
             return true;
         }
@@ -193,8 +215,9 @@ class PaymentNotificationHandler
         // Oney has reviewed the payer’s file and refused it
         if (!$paymentResource->is_paid &&
             $paymentResource->__isset('payment_method') &&
-            $paymentResource->__get('payment_method') !== null &&
-            $paymentResource->__get('payment_method')['is_pending'] === false &&
+            null !== $paymentResource->__get('payment_method') &&
+            \array_key_exists('is_pending', $paymentResource->__get('payment_method')) &&
+            false === $paymentResource->__get('payment_method')['is_pending'] &&
             \in_array($paymentResource->__get('payment_method')['type'], OneyGatewayFactory::PAYMENT_CHOICES, true)
         ) {
             return true;

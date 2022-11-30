@@ -7,7 +7,7 @@ namespace PayPlug\SyliusPayPlugPlugin\ApiClient;
 use Sylius\Component\Resource\Repository\RepositoryInterface;
 use Symfony\Contracts\Cache\CacheInterface;
 
-final class PayPlugApiClientFactory
+final class PayPlugApiClientFactory implements PayPlugApiClientFactoryInterface
 {
     /** @var \Sylius\Component\Resource\Repository\RepositoryInterface */
     private $gatewayConfigRepository;
@@ -30,7 +30,7 @@ final class PayPlugApiClientFactory
             $gatewayConfig = $this->gatewayConfigRepository->findOneBy(['factoryName' => $factoryName]);
 
             if (null === $gatewayConfig) {
-                throw new \LogicException('Not yet gateway created for ' . $factoryName);
+                throw new \LogicException('Not yet gateway created for '.$factoryName);
             }
             $key = $gatewayConfig->getConfig()['secretKey'];
         }

@@ -29,7 +29,7 @@ In local environment, the plugin will not work properly because you will not be 
 | | Version |
 | :--- | :--- |
 | PHP  | 7.4, 8.0 |
-| Sylius | 1.9, 1.10 |
+| Sylius | 1.9, 1.10, 1.11 |
 
 ## Installation
 
@@ -57,9 +57,12 @@ In local environment, the plugin will not work properly because you will not be 
 
     ```yaml
     parameters:
+        locale: fr_FR
         sylius_refund.supported_gateways:
             - payplug
             - payplug_oney
+            - payplug_bancontact
+            - payplug_apple_pay
     ```
 
 5. Add PayPlug routes in `config/routes.yaml`
@@ -171,15 +174,23 @@ If you plan override them also, you should retrieve them in your application.
 
 Copy Sylius templates overridden in plugin to your templates directory (e.g templates/bundles/)
 
-   ```shell
-    mkdir -p templates/bundles/SyliusAdminBundle/
-    mkdir -p templates/bundles/SyliusShopBundle/
-    mkdir -p templates/bundles/SyliusUiBundle/
-    cp -R vendor/payplug/sylius-payplug-plugin/src/Resources/views/SyliusAdminBundle/* templates/bundles/SyliusAdminBundle/
-    cp -R vendor/payplug/sylius-payplug-plugin/src/Resources/views/SyliusShopBundle/* templates/bundles/SyliusShopBundle/
-    cp -R vendor/payplug/sylius-payplug-plugin/src/Resources/views/SyliusUiBundle/* templates/bundles/SyliusUiBundle/
-    ```
+```shell
+mkdir -p templates/bundles/SyliusAdminBundle/
+mkdir -p templates/bundles/SyliusShopBundle/
+mkdir -p templates/bundles/SyliusUiBundle/
+cp -R vendor/payplug/sylius-payplug-plugin/src/Resources/views/SyliusAdminBundle/* templates/bundles/SyliusAdminBundle/
+cp -R vendor/payplug/sylius-payplug-plugin/src/Resources/views/SyliusShopBundle/* templates/bundles/SyliusShopBundle/
+cp -R vendor/payplug/sylius-payplug-plugin/src/Resources/views/SyliusUiBundle/* templates/bundles/SyliusUiBundle/
+```
 
+You also need to edit your twig config to add your path to avoid our configuration to be prepended :
+```yaml
+twig:
+  paths:
+    '%kernel.project_dir%/templates/bundles/SyliusAdminBundle': SyliusAdmin
+    '%kernel.project_dir%/templates/bundles/SyliusShopBundle': SyliusShop
+    '%kernel.project_dir%/templates/bundles/SyliusUiBundle': SyliusUi
+```
 ## Development
 
 See [How to contribute](CONTRIBUTING.md).

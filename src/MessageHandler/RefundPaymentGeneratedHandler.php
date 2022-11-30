@@ -9,6 +9,8 @@ use DateTimeInterface;
 use Doctrine\ORM\EntityManagerInterface;
 use PayPlug\SyliusPayPlugPlugin\Entity\RefundHistory;
 use PayPlug\SyliusPayPlugPlugin\Exception\ApiRefundException;
+use PayPlug\SyliusPayPlugPlugin\Gateway\ApplePayGatewayFactory;
+use PayPlug\SyliusPayPlugPlugin\Gateway\BancontactGatewayFactory;
 use PayPlug\SyliusPayPlugPlugin\Gateway\OneyGatewayFactory;
 use PayPlug\SyliusPayPlugPlugin\Gateway\PayPlugGatewayFactory;
 use PayPlug\SyliusPayPlugPlugin\PaymentProcessing\RefundPaymentProcessor;
@@ -104,6 +106,8 @@ final class RefundPaymentGeneratedHandler
                 !\in_array($paymentMethod->getGatewayConfig()->getFactoryName(), [
                     PayPlugGatewayFactory::FACTORY_NAME,
                     OneyGatewayFactory::FACTORY_NAME,
+                    BancontactGatewayFactory::FACTORY_NAME,
+                    ApplePayGatewayFactory::FACTORY_NAME,
                 ], true)
             ) {
                 return;
@@ -111,8 +115,8 @@ final class RefundPaymentGeneratedHandler
 
             $refundHistory = $this->payplugRefundHistoryRepository->findLastRefundForPayment($payment);
             if ($refundHistory instanceof RefundHistory &&
-                $refundHistory->getExternalId() !== null &&
-                $refundHistory->getRefundPayment() === null
+                null !== $refundHistory->getExternalId() &&
+                null === $refundHistory->getRefundPayment()
             ) {
                 /** @var RefundPayment $refundPayment */
                 $refundPayment = $this->refundPaymentRepository->find($message->id());
@@ -200,11 +204,9 @@ final class RefundPaymentGeneratedHandler
         Assert::isInstanceOf($payment->getMethod(), PaymentMethodInterface::class);
         Assert::isInstanceOf($payment->getMethod()->getGatewayConfig(), GatewayConfigInterface::class);
 
-        if ($payment->getMethod()->getGatewayConfig()->getFactoryName() === OneyGatewayFactory::FACTORY_NAME &&
+        if (OneyGatewayFactory::FACTORY_NAME === $payment->getMethod()->getGatewayConfig()->getFactoryName() &&
             $this->hasLessThanFortyEightHoursTransaction($payment, $message->orderNumber())) {
-            throw InvalidRefundAmount::withValidationConstraint(
-                $this->translator->trans('payplug_sylius_payplug_plugin.ui.oney_transaction_less_than_forty_eight_hours')
-            );
+            throw InvalidRefundAmount::withValidationConstraint($this->translator->trans('payplug_sylius_payplug_plugin.ui.oney_transaction_less_than_forty_eight_hours'));
         }
     }
 }

@@ -21,7 +21,8 @@ use Psr\Log\LoggerInterface;
 
 final class NotifyAction implements ActionInterface, ApiAwareInterface, GatewayAwareInterface
 {
-    use GatewayAwareTrait, ApiAwareTrait;
+    use GatewayAwareTrait;
+    use ApiAwareTrait;
 
     /** @var LoggerInterface */
     private $logger;
@@ -44,6 +45,8 @@ final class NotifyAction implements ActionInterface, ApiAwareInterface, GatewayA
 
     public function execute($request): void
     {
+        // Put notification asleep to prevent double processing while user is redirected manually
+        sleep(10);
         $details = ArrayObject::ensureArrayObject($request->getModel());
 
         $input = file_get_contents('php://input');
@@ -54,8 +57,8 @@ final class NotifyAction implements ActionInterface, ApiAwareInterface, GatewayA
             }
             $resource = $this->payPlugApiClient->treat($input);
 
-            $this->paymentNotificationHandler->treat($request, $resource, $details);
-            $this->refundNotificationHandler->treat($request, $resource, $details);
+            $this->paymentNotificationHandler->treat($request->getFirstModel(), $resource, $details);
+            $this->refundNotificationHandler->treat($request->getFirstModel(), $resource, $details);
         } catch (PayplugException $exception) {
             $details['status'] = PayPlugApiClientInterface::FAILED;
             $this->logger->error('[PayPlug] Notify action', ['error' => $exception->getMessage()]);
